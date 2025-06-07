@@ -20,7 +20,7 @@
         android:id="@+id/button"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Click Me"
+        android:text="현장근무 시작"
         android:textColor="#FFFFFF"
         android:textSize="16sp"
         android:textStyle="bold"

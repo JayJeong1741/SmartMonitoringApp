@@ -2,6 +2,7 @@ package com.example.fcmtest;
 
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
@@ -12,12 +13,19 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Button;
 import android.widget.Toast;
+
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
+
 import com.google.firebase.messaging.FirebaseMessaging;
 import android.content.SharedPreferences;
 
 import org.json.JSONObject;
+
+import java.util.ArrayList;
+import java.util.List;
 
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
@@ -26,7 +34,7 @@ import okhttp3.RequestBody;
 import okhttp3.Response;
 
 public class MainActivity extends AppCompatActivity implements LocationManager.LocationUpdateListener {
-    private static final int LOCATION_PERMISSION_REQUEST_CODE = 100;
+    private static final int PERMISSION_REQUEST_CODE = 100;
     private final OkHttpClient okHttpClient = new OkHttpClient();
     private LocationManager locationManager;
     private String fcmToken;
@@ -51,12 +59,8 @@ public class MainActivity extends AppCompatActivity implements LocationManager.L
         // LocationManager 초기화
         locationManager = new LocationManager(this, this);
 
-        // 권한 확인 및 요청
-        checkLocationPermission();
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 1001);
-        }
+        // 권한 요청
+        requestPermissions();
 
         FirebaseMessaging.getInstance().getToken()
                 .addOnCompleteListener(task -> {
@@ -73,6 +77,7 @@ public class MainActivity extends AppCompatActivity implements LocationManager.L
 
         webView.setWebViewClient(new WebViewClient());
         WebSettings webSettings = webView.getSettings();
+        webView.getSettings().setCacheMode(WebSettings.LOAD_DEFAULT);
         webSettings.setJavaScriptEnabled(true);
         webView.loadUrl("http://192.168.35.121:8080/main/");
 
@@ -87,15 +92,18 @@ public class MainActivity extends AppCompatActivity implements LocationManager.L
     }
 
     private void updateButtonText() {
-        button.setText(isLocationServiceRunning ? "위치 전송 중단" : "위치 전송 시작");
+        button.setText(isLocationServiceRunning ? "현장근무 중단" : "현장근무 시작");
     }
 
     private void startLocationService() {
-        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED
-                && ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            checkLocationPermission();
+        // 위치 권한 확인
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED ||
+                ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            Toast.makeText(this, "위치 권한이 필요합니다.", Toast.LENGTH_SHORT).show();
+            requestPermissions();
             return;
         }
+
         Intent serviceIntent = new Intent(this, LocationService.class);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             startForegroundService(serviceIntent);
@@ -117,40 +125,108 @@ public class MainActivity extends AppCompatActivity implements LocationManager.L
         Toast.makeText(this, "위치 전송 중단", Toast.LENGTH_SHORT).show();
     }
 
-    private void checkLocationPermission() {
-        String[] permissions;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            permissions = new String[]{
-                    Manifest.permission.ACCESS_FINE_LOCATION,
-                    Manifest.permission.ACCESS_COARSE_LOCATION,
-                    Manifest.permission.ACCESS_BACKGROUND_LOCATION
-            };
-        } else {
-            permissions = new String[]{
-                    Manifest.permission.ACCESS_FINE_LOCATION,
-                    Manifest.permission.ACCESS_COARSE_LOCATION
-            };
-        }
+    private void requestPermissions() {
+        List<String> permissionsNeeded = new ArrayList<>();
 
-        // 권한 상태 확인
-        boolean needsPermission = false;
-        for (String permission : permissions) {
-            if (ActivityCompat.checkSelfPermission(this, permission) != PackageManager.PERMISSION_GRANTED) {
-                needsPermission = true;
-                Log.d("PermissionCheck", "Permission required: " + permission);
-            } else {
-                Log.d("PermissionCheck", "Permission already granted: " + permission);
+        // 알림 권한 (Android 13, API 33 이상)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                permissionsNeeded.add(Manifest.permission.POST_NOTIFICATIONS);
             }
         }
 
-        if (needsPermission) {
-            Log.d("PermissionCheck", "Requesting permissions");
-            ActivityCompat.requestPermissions(this, permissions, LOCATION_PERMISSION_REQUEST_CODE);
+        // 위치 권한
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            permissionsNeeded.add(Manifest.permission.ACCESS_FINE_LOCATION);
+        }
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            permissionsNeeded.add(Manifest.permission.ACCESS_COARSE_LOCATION);
+        }
+
+        // 백그라운드 위치 권한 (Android 10, API 29 이상)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_BACKGROUND_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                permissionsNeeded.add(Manifest.permission.ACCESS_BACKGROUND_LOCATION);
+            }
+        }
+
+        // 포그라운드 서비스 위치 권한 (Android 14, API 34 이상)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.FOREGROUND_SERVICE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                permissionsNeeded.add(Manifest.permission.FOREGROUND_SERVICE_LOCATION);
+            }
+        }
+
+        // 권한 요청이 필요한 경우
+        if (!permissionsNeeded.isEmpty()) {
+            // 권한 필요성 설명 다이얼로그 표시
+            showPermissionRationaleDialog(permissionsNeeded);
         } else if (isLocationServiceRunning) {
-            Log.d("PermissionCheck", "Starting location service");
+            // 모든 권한이 이미 부여된 경우, 위치 서비스 시작
             startLocationService();
-        } else {
-            Log.d("PermissionCheck", "Permissions granted, but service not started");
+        }
+    }
+
+    private void showPermissionRationaleDialog(List<String> permissions) {
+        String rationaleMessage = "앱을 정상적으로 사용하려면 다음 권한이 필요합니다:\n";
+        for (String permission : permissions) {
+            if (permission.equals(Manifest.permission.POST_NOTIFICATIONS)) {
+                rationaleMessage += "- 알림: 푸시 알림을 받기 위해 필요합니다.\n";
+            } else if (permission.equals(Manifest.permission.ACCESS_FINE_LOCATION) || permission.equals(Manifest.permission.ACCESS_COARSE_LOCATION)) {
+                rationaleMessage += "- 위치: 정확한 위치 정보를 제공하기 위해 필요합니다.\n";
+            } else if (permission.equals(Manifest.permission.ACCESS_BACKGROUND_LOCATION)) {
+                rationaleMessage += "- 백그라운드 위치: 앱이 백그라운드에서도 위치를 추적하기 위해 필요합니다.\n";
+            } else if (permission.equals(Manifest.permission.FOREGROUND_SERVICE_LOCATION)) {
+                rationaleMessage += "- 포그라운드 서비스 위치: 위치 기반 서비스를 실행하기 위해 필요합니다.\n";
+            }
+        }
+
+        new AlertDialog.Builder(this)
+                .setTitle("권한 요청")
+                .setMessage(rationaleMessage)
+                .setPositiveButton("허용", (dialog, which) -> {
+                    ActivityCompat.requestPermissions(this, permissions.toArray(new String[0]), PERMISSION_REQUEST_CODE);
+                })
+                .setNegativeButton("거부", (dialog, which) -> {
+                    Toast.makeText(this, "권한이 거부되어 일부 기능이 제한될 수 있습니다.", Toast.LENGTH_SHORT).show();
+                })
+                .setCancelable(false)
+                .show();
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == PERMISSION_REQUEST_CODE) {
+            boolean allGranted = true;
+            for (int i = 0; i < permissions.length; i++) {
+                if (grantResults[i] != PackageManager.PERMISSION_GRANTED) {
+                    allGranted = false;
+                    Log.d("PermissionResult", "Permission denied: " + permissions[i]);
+                    if (!ActivityCompat.shouldShowRequestPermissionRationale(this, permissions[i])) {
+                        // 영구적 거부 시 설정 화면으로 안내
+                        new AlertDialog.Builder(this)
+                                .setTitle("권한 필요")
+                                .setMessage(permissions[i] + " 권한이 필요합니다. 설정에서 허용해주세요.")
+                                .setPositiveButton("설정", (dialog, which) -> {
+                                    Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+                                    intent.setData(Uri.parse("package:" + getPackageName()));
+                                    startActivity(intent);
+                                })
+                                .setNegativeButton("취소", (dialog, which) -> {
+                                    Toast.makeText(this, "권한이 거부되어 일부 기능이 제한될 수 있습니다.", Toast.LENGTH_SHORT).show();
+                                })
+                                .setCancelable(false)
+                                .show();
+                    }
+                } else {
+                    Log.d("PermissionResult", "Permission granted: " + permissions[i]);
+                }
+            }
+            if (allGranted && isLocationServiceRunning) {
+                Log.d("PermissionResult", "All permissions granted, starting service");
+                startLocationService();
+            }
         }
     }
 
@@ -187,34 +263,10 @@ public class MainActivity extends AppCompatActivity implements LocationManager.L
     }
 
     @Override
-    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        if (requestCode == LOCATION_PERMISSION_REQUEST_CODE) {
-            boolean allGranted = true;
-            for (int i = 0; i < grantResults.length; i++) {
-                if (grantResults[i] != PackageManager.PERMISSION_GRANTED) {
-                    allGranted = false;
-                    Log.d("PermissionResult", "Permission denied: " + permissions[i]);
-                } else {
-                    Log.d("PermissionResult", "Permission granted: " + permissions[i]);
-                }
-            }
-            if (allGranted && isLocationServiceRunning) {
-                Log.d("PermissionResult", "All permissions granted, starting service");
-                startLocationService();
-            } else {
-                Toast.makeText(this, "위치 권한이 필요합니다.", Toast.LENGTH_SHORT).show();
-                Log.d("PermissionResult", "Some permissions denied or service not started");
-            }
-        }
-    }
-
-    @Override
     public void onLocationUpdated(android.location.Location location) {
         String deviceName = Settings.Global.getString(getContentResolver(), "device_name");
         Log.d("device", "name:" + deviceName);
         String message = "위도: " + location.getLatitude() + ", 경도: " + location.getLongitude() + ", 사용자:" + deviceName;
         Toast.makeText(this, message, Toast.LENGTH_LONG).show();
-        sendLocationToServer(DeviceUtils.getOrCreateUUID(this), deviceName, fcmToken, location.getLatitude(), location.getLongitude());
     }
 }

@@ -42,7 +42,7 @@ public class MyFirebaseMessagingService extends FirebaseMessagingService {
     private void sendTokenToServer(String token) {
         new Thread(() -> {
             try {
-                URL url = new URL("http://118.218.212.147:59727/main/"); // 서버 주소
+                URL url = new URL("http://192.168.35.121:8080/main/"); // 서버 주소
                 HttpURLConnection conn = (HttpURLConnection) url.openConnection();
 
                 conn.setRequestMethod("POST");
