@@ -1,6 +1,5 @@
 package com.example.fcmtest;
 
-
 import android.Manifest;
 import android.content.Context;
 import android.content.pm.PackageManager;
@@ -8,7 +7,6 @@ import android.location.Location;
 import android.os.Handler;
 import android.os.Looper;
 import android.widget.Toast;
-
 import androidx.annotation.RequiresPermission;
 import androidx.core.app.ActivityCompat;
 import com.google.android.gms.location.FusedLocationProviderClient;
@@ -26,7 +24,6 @@ public class LocationManager {
     private static final long UPDATE_INTERVAL = 30 * 1000; // 30초
     private final LocationUpdateListener listener;
 
-    // 위치 업데이트를 처리할 콜백 인터페이스
     public interface LocationUpdateListener {
         void onLocationUpdated(Location location);
     }
@@ -37,7 +34,6 @@ public class LocationManager {
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(context);
         handler = new Handler(Looper.getMainLooper());
 
-        // 위치 요청 설정
         locationRequest = LocationRequest.create()
                 .setInterval(UPDATE_INTERVAL)
                 .setFastestInterval(UPDATE_INTERVAL / 2)
@@ -56,12 +52,11 @@ public class LocationManager {
             public void onLocationResult(LocationResult locationResult) {
                 Location location = locationResult.getLastLocation();
                 if (location != null && listener != null) {
-                    listener.onLocationUpdated(location); // 위치 데이터를 리스너로 전달
+                    listener.onLocationUpdated(location);
                 }
             }
         };
 
-        // 주기적으로 위치 요청
         Runnable locationRunnable = new Runnable() {
             @RequiresPermission(allOf = {Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION})
             @Override
