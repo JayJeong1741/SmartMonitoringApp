@@ -4,7 +4,6 @@ import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.Service;
-import android.content.Context;
 import android.content.Intent;
 import android.os.Build;
 import android.os.IBinder;
@@ -89,7 +88,7 @@ public class LocationService extends Service {
 
     private Notification buildNotification() {
         return new NotificationCompat.Builder(this, CHANNEL_ID)
-                .setContentTitle("위치 전송 서비스")
+                .setContentTitle("현장근무 중")
                 .setContentText("위치 데이터를 서버로 전송 중입니다.")
                 .setSmallIcon(android.R.drawable.ic_menu_mylocation)
                 .build();

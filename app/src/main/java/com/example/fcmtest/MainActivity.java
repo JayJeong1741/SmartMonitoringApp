@@ -1,5 +1,7 @@
 package com.example.fcmtest;
 
+import android.app.ActivityManager;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.net.Uri;
@@ -42,11 +44,15 @@ public class MainActivity extends AppCompatActivity implements LocationManager.L
     private WebView webView;
     private SharedPreferences prefs;
     private boolean isLocationServiceRunning;
-
+    private String deviceName;
+    private String deviceId;
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+
+        deviceName = DeviceUtils.getDeviceName(this);
+        deviceId = DeviceUtils.getOrCreateUUID(this);
 
         button = findViewById(R.id.button);
         webView = findViewById(R.id.webView);
@@ -73,7 +79,6 @@ public class MainActivity extends AppCompatActivity implements LocationManager.L
                         Log.d("FCM", "Device token: " + fcmToken);
                     }
                 });
-        Log.d("UUID", "Device UUID:" + DeviceUtils.getOrCreateUUID(this));
 
         webView.setWebViewClient(new WebViewClient());
         WebSettings webSettings = webView.getSettings();
@@ -96,6 +101,14 @@ public class MainActivity extends AppCompatActivity implements LocationManager.L
     }
 
     private void startLocationService() {
+        if (isServiceRunning()) {
+            Log.d("LocationService", "Service is already running");
+            isLocationServiceRunning = true;
+            prefs.edit().putBoolean("isLocationServiceRunning", true).apply();
+            updateButtonText();
+            return;
+        }
+
         // 위치 권한 확인
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED ||
                 ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
@@ -113,6 +126,7 @@ public class MainActivity extends AppCompatActivity implements LocationManager.L
         isLocationServiceRunning = true;
         prefs.edit().putBoolean("isLocationServiceRunning", true).apply();
         updateButtonText();
+        sendStateUpdate(deviceId, deviceName, fcmToken, 1);
         Toast.makeText(this, "위치 전송 시작", Toast.LENGTH_SHORT).show();
     }
 
@@ -122,6 +136,7 @@ public class MainActivity extends AppCompatActivity implements LocationManager.L
         isLocationServiceRunning = false;
         prefs.edit().putBoolean("isLocationServiceRunning", false).apply();
         updateButtonText();
+        sendStateUpdate(deviceId, deviceName, fcmToken, 0);
         Toast.makeText(this, "위치 전송 중단", Toast.LENGTH_SHORT).show();
     }
 
@@ -230,43 +245,54 @@ public class MainActivity extends AppCompatActivity implements LocationManager.L
         }
     }
 
-    private void sendLocationToServer(String uuid, String deviceName, String fcmToken, double latitude, double longitude) {
-        new Thread(() -> {
-            try {
-                JSONObject json = new JSONObject();
-                json.put("deviceId", uuid);
-                json.put("deviceName", deviceName);
-                json.put("fcmToken", fcmToken);
-                json.put("lat", latitude);
-                json.put("lng", longitude);
-
-                RequestBody body = RequestBody.create(
-                        json.toString(),
-                        MediaType.parse("application/json; charset=utf-8")
-                );
-                Request request = new Request.Builder()
-                        .url("http://192.168.35.121:8080/main/api/location")
-                        .post(body)
-                        .build();
-
-                try (Response response = okHttpClient.newCall(request).execute()) {
-                    if (response.isSuccessful()) {
-                        Log.d("LocationManager", "위치 전송 성공: " + response.body().string());
-                    } else {
-                        Log.e("LocationManager", "위치 전송 실패: " + response.message());
-                    }
-                }
-            } catch (Exception e) {
-                Log.e("LocationManager", "위치 전송 중 오류: " + e.getMessage());
-            }
-        }).start();
-    }
-
     @Override
     public void onLocationUpdated(android.location.Location location) {
         String deviceName = Settings.Global.getString(getContentResolver(), "device_name");
         Log.d("device", "name:" + deviceName);
         String message = "위도: " + location.getLatitude() + ", 경도: " + location.getLongitude() + ", 사용자:" + deviceName;
         Toast.makeText(this, message, Toast.LENGTH_LONG).show();
+    }
+
+    private void sendStateUpdate(String uuid, String deviceName, String fcmToken, int state) {
+        new Thread(() -> {
+            try {
+                JSONObject json = new JSONObject();
+                json.put("deviceId", uuid);
+                json.put("state", state);
+                json.put("deviceName", deviceName);
+                json.put("fcmToken", fcmToken);
+
+                RequestBody body = RequestBody.create(
+                        json.toString(),
+                        MediaType.parse("application/json; charset=utf-8")
+                );
+
+                Request request = new Request.Builder()
+                        .url("http://192.168.35.121:8080/main/api/updateState")
+                        .post(body)
+                        .build();
+
+                OkHttpClient client = new OkHttpClient();
+                try (Response response = client.newCall(request).execute()) {
+                    if (response.isSuccessful()) {
+                        Log.d("updateState", "상태 정보 전송 성공: " + response.body().string());
+                    } else {
+                        Log.e("updateState", "상태 정보 전송 실패: " + response.message());
+                    }
+                }
+            } catch (Exception e) {
+                Log.e("updateState", "상태 정보 전송 중 오류", e);
+            }
+        }).start(); // 👉 반드시 start() 해줘야 백그라운드 스레드 실행됨
+    }
+
+    private boolean isServiceRunning() {
+        ActivityManager manager = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
+        for (ActivityManager.RunningServiceInfo service : manager.getRunningServices(Integer.MAX_VALUE)) {
+            if (LocationService.class.getName().equals(service.service.getClassName())) {
+                return true;
+            }
+        }
+        return false;
     }
 }
